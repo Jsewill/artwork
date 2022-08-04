@@ -89,7 +89,7 @@ func (m *Mint) One(n nft.Nft) error {
 			return fmt.Errorf("At least one Asset URI is required to mint an NFT.")
 		}
 		if assetHash == "" {
-			// No asset hash. This is require to work.
+			// No asset hash. This is required to mint an NFT.
 			return fmt.Errorf("An Asset hash is required to mint an NFT.")
 		}
 		// Get Metadata URIs and hash // @TODO: If no checks need to be done, these two lines could be removed and these vars directly assigned to the request struct members.
