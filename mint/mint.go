@@ -16,31 +16,25 @@ type Mint struct {
 	WalletId       uint
 	MintWalletId   uint
 	TargetAddress  string
-	Royalty        uint
 	RoyaltyAddress string
-	Fee            uint
 }
 
-// NewMint creates a new *Mint with the supplied minting information. Fee and Royalty are used as defaults, which an individual NFT can override.
-func NewMint(walletId uint, mintWalletId uint, targetAddress string, royalty uint, royaltyAddress string, fee uint) *Mint {
+// NewMint creates a new *Mint with the supplied minting information.
+func NewMint(walletId uint, mintWalletId uint, targetAddress string, royaltyAddress string) *Mint {
 	return &Mint{
 		WalletId:       walletId,
 		MintWalletId:   mintWalletId,
 		TargetAddress:  targetAddress,
-		Royalty:        royalty,
 		RoyaltyAddress: royaltyAddress,
-		Fee:            fee,
 	}
 }
 
 // MintRequest creates and returns a new rpc.MintRequest from its properties.
 func (m *Mint) ToRequest() *rpc.MintRequest {
 	return &rpc.MintRequest{
-		WalletId:          m.MintWalletId,
-		TargetAddress:     m.TargetAddress,
-		RoyaltyPercentage: m.Royalty,
-		RoyaltyAddress:    m.RoyaltyAddress,
-		Fee:               m.Fee,
+		WalletId:       m.MintWalletId,
+		TargetAddress:  m.TargetAddress,
+		RoyaltyAddress: m.RoyaltyAddress,
 	}
 }
 
@@ -106,6 +100,8 @@ func (m *Mint) One(n nft.Nft) error {
 		mrq.Uris, mrq.Hash = assetUris, assetHash
 		mrq.MetaUris, mrq.MetaHash = metaUris, metaHash
 		mrq.LicenseUris, mrq.LicenseHash = licenseUris, licenseHash
+		mrq.RoyaltyPercentage = rpc.PercentageToRoyalty(n.Royalty)
+		mrq.Fee = n.Fee
 		// Time to mint!
 		mr, err := mrq.Send(rpc.Wallet)
 		if err != nil {
@@ -126,8 +122,15 @@ func (m *Mint) One(n nft.Nft) error {
 // Many attempts to mint at least one nft on the Chia Blockchain. Returns an error if there was a critical failure, nil on success.
 func (m *Mint) Many(c *nft.Collection) error {
 	// For now, we'll just loop over collection items and use Mint.One()
+	for i, n := range c.Nfts {
+		fmt.Printf("Starting on NFT #%d\n", i)
+		err := m.One(n)
+		if err != nil {
+			return fmt.Errorf("Failed to mint NFT #%d: %s\n", i, err)
+		}
 
-	// Wait to mint another to avoid misses.
-	time.Sleep(48 * time.Second)
-	return fmt.Errorf("The Mint.Many function has not yet been written.")
+		// Wait to mint another to avoid misses.
+		time.Sleep(48 * time.Second)
+	}
+	return nil
 }
