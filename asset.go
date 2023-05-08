@@ -1,4 +1,4 @@
-package main
+package artwork
 
 import (
 	"fmt"
@@ -18,13 +18,19 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
-// Asset is a type of image asset which has a type, Kind, a filepath, Path, and a slice of available overlay regions, Regions.
+// Asset is a type of image asset which has an asset type, Kind, a filepath, Path, an image, Image and a slice of available overlay regions, Regions.
 type Asset struct {
-	Kind    string
+	Kind    string // @TODO: decide how this should be typed; Should this be many?
 	Path    string
 	Image   image.Image // @TODO: Consider embedding.
 	Parent  *Region
 	Regions []*Region
+}
+
+func NewAsset() *Asset {
+	return &Asset{
+		Regions: make([]*Region, 0),
+	}
 }
 
 // Load loads an Asset's image into *Asset.Image. Returns an error if something went wrong along the way.
@@ -61,28 +67,10 @@ func (a *Asset) IsLoaded() bool {
 	return true
 }
 
-// Region defines an overlay region, with center-point coordinates, Coords, a slice of applicable kinds, Kinds, and an asset to overlay, Asset.
-type Region struct {
-	*Asset
-	Coords *image.Point
-	Kinds  []string
-	Scale  *Scale
-	//Transform f64.Aff3
-}
-
-// Coordinates is a getter function for region coordinates. Defaults to center.
-func (r *Region) Coordinates() *image.Point {
-	// Default to center.
-	if r.Coords == nil {
-		r.Coords = &image.Point{r.Bounds().Min.Add(r.Bounds().Dx() / 2), r.Bounds().Min.Add(r.Bounds().Dy() / 2)}
-	}
-	return r.Coords
-}
-
 // Composite climbs the current composition tree branch and composites down from the leaves. Returns image.Image, nil, when successful; nil, nil, at leaf; and nil/image.Image, error when there was a failure. @TODO: Find things to error about...
 func (a *Asset) Composite() (image.Image, error) {
 	// Check asset. If nil, this region is a leaf.
-	if a == nil || a.Regions == nil {
+	if a == nil {
 		// Nothing to composite.
 		return nil, nil
 	}
@@ -97,6 +85,10 @@ func (a *Asset) Composite() (image.Image, error) {
 	canvas := image.NewNRGBA(abounds)
 	// Draw, and potentially scale, this branch asset onto the canvas.
 	draw.ApproxBiLinear.Scale(canvas, canvas.Bounds(), a.Image, a.Image.Bounds(), draw.Over, nil)
+	// Is this asset a leaf?
+	if a.Regions == nil {
+		return canvas, nil
+	}
 	// Climb the tree.
 	for _, region := range a.Regions {
 		comp, err := region.Composite()

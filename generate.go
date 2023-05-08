@@ -1,5 +1,4 @@
-/* Generate is a program for generating NFTs, and is meant to compliment http://github.com/Jsewill/chia/nft/mint */
-package generate
+package artwork
 
 import (
 	"image"
@@ -19,6 +18,9 @@ func Upload() {
 	nft := nftstorage.NewNFT()
 }*/
 
+// @TODO: Rework the WeightMap functions, either make them more generic, or make them based on an attribute type that is fairly generic/useful.
+
+// Sum returns the sum of the weight map.
 func (a AttributeWeightMap) Sum() (sum float64) {
 	for _, w := range a {
 		sum += w

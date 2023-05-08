@@ -1,4 +1,4 @@
-package main
+package artwork
 
 import "log"
 

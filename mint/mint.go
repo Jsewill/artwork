@@ -14,29 +14,48 @@ import (
 
 // Mint is a type which contains default details pertaining to minting an NFT, and which can be used to mint an NFT.
 type Mint struct {
-	WalletId       uint
-	MintWalletId   uint
-	TargetAddress  string
-	RoyaltyAddress string
+	WalletId        uint
+	TargetAddresses []string
+	RoyaltyAddress  string
 }
 
 // NewMint creates a new *Mint with the supplied minting information.
-func NewMint(walletId uint, mintWalletId uint, targetAddress string, royaltyAddress string) *Mint {
+func NewMint(walletId uint, targetAddresses []string, royaltyAddress string, royaltyPercentage float64) *Mint {
 	return &Mint{
-		WalletId:       walletId,
-		MintWalletId:   mintWalletId,
-		TargetAddress:  targetAddress,
-		RoyaltyAddress: royaltyAddress,
+		WalletId:        walletId,
+		TargetAddresses: targetAddresses,
+		RoyaltyAddress:  royaltyAddress,
 	}
 }
 
 // MintRequest creates and returns a new rpc.MintRequest from its properties.
-func (m *Mint) ToRequest() *rpc.MintRequest {
-	return &rpc.MintRequest{
-		WalletId:       m.MintWalletId,
-		TargetAddress:  m.TargetAddress,
-		RoyaltyAddress: m.RoyaltyAddress,
+func (m *Mint) MintBulkRequest() *rpc.MintBulkRequest {
+	return &rpc.MintBulkRequest{
+		WalletId:        walletId,
+		TargetAddresses: m.TargetAddresses,
+		RoyaltyAddress:  m.RoyaltyAddress,
 	}
+}
+
+// MintRequest creates and returns a new rpc.MintRequest from its properties.
+func (m *Mint) MintRequest() *rpc.MintRequest {
+	return &rpc.MintRequest{
+		WalletId:        walletId,
+		TargetAddresses: m.TargetAddresses[0],
+		RoyaltyAddress:  m.RoyaltyAddress,
+	}
+}
+
+// Converts an nft.Nft to a MetadataListItem for bulk mint requests.
+func MetadataListItemFromNft(n nft.Nft) MetadataListItem {
+	mli := new(MetadataListItem)
+	mli.Uris = n.Uris
+	mli.MetaUris = n.Metadata.Uris
+	mli.LicenseUris = n.License.Uris
+	mli.Hash, _ = n.Hash()
+	mli.MetaHash, _ = n.Metadata.Hash()
+	mli.LicenseHash, _ = n.License.Hash()
+	return *mli
 }
 
 // One attempts to mint one nft on the Chia Blockchain. Returns an error  if there was a critical failure, nil on success.
@@ -64,7 +83,7 @@ func (m *Mint) One(n nft.Nft) error {
 			continue
 		}
 		// Check wallet balance
-		balance, err := &rpc.WalletBalanceRequest{WalletId: m.WalletId}.Send(rpc.Wallet)
+		balance, err := &rpc.WalletBalanceRequest{WalletId: 1}.Send(rpc.Wallet)
 		if err != nil {
 			err = fmt.Errorf("XCH Wallet balance request failed with the following error:", err)
 			logErr.Println(err)
@@ -77,7 +96,6 @@ func (m *Mint) One(n nft.Nft) error {
 			continue
 		}
 		if balance.WalletBalance.SpendableBalance < m.Fee {
-			// We have enough to pay fees. Report and break out of the switch.
 			logErr.Println("XCH wallet spendable balance is insufficient. Waiting to retry.\nFee: %d; Balance: %+v;\n", m.Fee, balance.WalletBalance)
 			// Wait for spendable balance
 			time.Sleep(10 * time.Second)
@@ -123,7 +141,7 @@ func (m *Mint) One(n nft.Nft) error {
 		metaUris, metaHash := n.Metadata.URIs, n.Metadata.Hash()
 		licenseUris, LicenseHash := n.License.URIs, n.License.Hash()
 		// Create request
-		mrq := m.ToRequest()
+		mrq := m.MintRequest()
 		mrq.Uris, mrq.Hash = assetUris, assetHash
 		mrq.MetaUris, mrq.MetaHash = metaUris, metaHash
 		mrq.LicenseUris, mrq.LicenseHash = licenseUris, licenseHash
@@ -150,20 +168,93 @@ func (m *Mint) One(n nft.Nft) error {
 }
 
 // Many attempts to mint at least one nft on the Chia Blockchain. Returns an error if there was a critical failure, nil on success.
-func (m *Mint) Many(c *nft.Collection) error {
-	//@TODO: This needs to be made to select at least one coin and mint many at once.
-	// For now, we'll just loop over collection items and use Mint.One()
-	for i, n := range c.Nfts {
-		log.Printf("Starting on NFT #%d\n", i)
-		err := m.One(n)
+func (m *Mint) Many(c *nft.Collection, bulk bool) error {
+	if !bulk {
+		for i, n := range c.Nfts {
+			// Not bulk, use Mint.One()
+			log.Printf("Starting on NFT #%d\n", i)
+			err := m.One(n)
+			if err != nil {
+				err = fmt.Errorf("Failed to mint NFT #%d: %s\n", i, err)
+				logErr.Println(err)
+				// Is this enough to return on?
+				return err
+			}
+
+			// Wait to mint another to avoid misses.
+			time.Sleep(48 * time.Second)
+		}
+	} else {
+		// @TODO: Bulk minting.
+		mbrq := m.MintBulkRequest()
+		mbrq.RoyaltyPercentage = rpc.PercentageToRoyalty(c.Royalty)
+		mbrq.MintTotal = len(c.Nfts)
+		mbrq.Fee = c.Fee
+
+		// Check that the NFT wallet we're minting from has a DID associated with it.
+		isDid, err := &rpc.NftWalletGetDidRequest{WalletId: 1}.Send(rpc.Wallet)
 		if err != nil {
-			err = fmt.Errorf("Failed to mint NFT #%d: %s\n", i, err)
+			err = fmt.Errorf("NFT Wallet Get DID request failed with the following error:", err)
 			logErr.Println(err)
 			return err
 		}
 
-		// Wait to mint another to avoid misses.
-		time.Sleep(48 * time.Second)
+		if !isDid.success && isDid.DidId != "" {
+			mbrq.MintFromDid = true
+		} else {
+			mbrq.MintFromDid = false
+		}
+
+		// Check wallet balance
+		for {
+			balance, err := &rpc.WalletBalanceRequest{WalletId: 1}.Send(rpc.Wallet)
+			if err != nil {
+				err = fmt.Errorf("XCH Wallet balance request failed with the following error:", err)
+				logErr.Println(err)
+				return err
+			}
+			if !balance.Success {
+				// Wait for wallet response.
+				logErr.Printf("XCH Wallet Balance request was unsuccessful. Error: %s\nWaiting to retry.\n", balance.Error)
+				time.Sleep(10 * time.Second)
+				continue
+			}
+			if balance.WalletBalance.SpendableBalance < m.Fee {
+				// Insufficient balance to cover fees.
+				logErr.Println("XCH wallet spendable balance is insufficient. Waiting to retry.\nFee: %d; Balance: %+v;\n", m.Fee, balance.WalletBalance)
+				// Wait for spendable balance
+				time.Sleep(10 * time.Second)
+				continue
+			}
+			// Request was successful, and the spendable balance was sufficient.
+			log.Println("Sufficient spendable balance: ", balance.WalletBalance.SpendableBalance)
+			break
+		}
+
+		// Prepare collection.
+		for _, n := range c.Nfts {
+			mbrq.MetadataList = append(mbrq.MetadataList, MetadataListItemFromNft(n))
+		}
+
+		// Get spendbundle.
+		spendBundle, err := mbrq.Send(rpc.Wallet)
+		if err != nil {
+			err = fmt.Errorf("Bulk Mint SpendBundle request failed with the following error:", err)
+			logErr.Println(err)
+			return err
+		}
+		if !spendBundle.Success {
+			// Couldn't create the SpendBundle for some reason.
+			fmt.Errorf("SpendBundle creation was unsuccessful. Error: %s\nCannot continue.\n", spendBundle.Error)
+			logErr.Printf(err)
+			return
+		}
+
+		// Declare success. @TODO: Ask for confirmation.
+		log.Printf("SpendBundle prepared. NFT IDs: %v", spendBundle.NftIdList)
+
+		// Push transaction to the blockchain
+		mintResults, err := &rpc.PushTxRequest{spendBundle}.Send(rpc.FullNode)
 	}
 	return nil
 }

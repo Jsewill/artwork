@@ -1,4 +1,4 @@
-package main
+package artwork
 
 import (
 	"fmt"
@@ -27,6 +27,13 @@ func NewPiece(id uint, canvas image.Image, bounds *image.Rectangle) *Piece {
 		}
 	}
 	return &Piece{Id: id, Asset: &Asset{Image: canvas}}
+}
+
+// Build creates an asset tree from a set of asset configuration data. Returns nil on succes, error on failure.
+func (p *Piece) Build() error {
+	// Build tree from Configuration.
+	//
+	return nil
 }
 
 // Composite walks Regions, attempting to composite the entire composition tree onto the canvas.
