@@ -145,7 +145,12 @@ func (m *Mint) One(n nft.Nft) error {
 		mrq.Uris, mrq.Hash = assetUris, assetHash
 		mrq.MetaUris, mrq.MetaHash = metaUris, metaHash
 		mrq.LicenseUris, mrq.LicenseHash = licenseUris, licenseHash
-		mrq.RoyaltyPercentage = rpc.PercentageToRoyalty(n.Royalty)
+		if n.Royalty > 0.0 {
+			royalty := n.Royalty
+		} else {
+			royalty := c.Royalty
+		}
+		mrq.RoyaltyPercentage = rpc.PercentageToRoyalty(royalty)
 		mrq.Fee = n.Fee
 		// Time to mint!
 		log.Println("Sending mint request.")
@@ -236,25 +241,32 @@ func (m *Mint) Many(c *nft.Collection, bulk bool) error {
 			mbrq.MetadataList = append(mbrq.MetadataList, MetadataListItemFromNft(n))
 		}
 
-		// Get spendbundle.
-		spendBundle, err := mbrq.Send(rpc.Wallet)
+		// Get the SpendBundle.
+		mbResponse, err := mbrq.Send(rpc.Wallet)
 		if err != nil {
-			err = fmt.Errorf("Bulk Mint SpendBundle request failed with the following error:", err)
+			err = fmt.Errorf("Bulk Mint request failed with the following error:", err)
 			logErr.Println(err)
 			return err
 		}
-		if !spendBundle.Success {
+		if !mbResponse.Success {
 			// Couldn't create the SpendBundle for some reason.
-			fmt.Errorf("SpendBundle creation was unsuccessful. Error: %s\nCannot continue.\n", spendBundle.Error)
+			fmt.Errorf("SpendBundle creation was unsuccessful. Error: %s\nCannot continue.\n", mbResponse.Error)
 			logErr.Printf(err)
 			return
 		}
 
 		// Declare success. @TODO: Ask for confirmation.
-		log.Printf("SpendBundle prepared. NFT IDs: %v", spendBundle.NftIdList)
+		log.Printf("SpendBundle prepared. NFT IDs: %v", mbResponse.NftIdList)
 
 		// Push transaction to the blockchain
-		mintResults, err := &rpc.PushTxRequest{spendBundle}.Send(rpc.FullNode)
+		mintResults, err := &rpc.PushTxRequest{mbResponse.SpendBundle}.Send(rpc.FullNode)
+
+		if err != nil || mintResults.Status != "SUCCESS" || mintResults.Success != true {
+			fmt.Errorf("Failed to push SpendBundle. Error: %s\nCannot continue.\n", mintResults.Error)
+			logErr.Printf(err)
+			return
+		}
+
 	}
 	return nil
 }
