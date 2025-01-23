@@ -6,10 +6,15 @@ const (
 	logPrefix = "artwork: "
 )
 
+var (
+	logErr *log.Logger
+)
+
 func init() {
 	var (
 		logErr = log.Default
-		log    = log.New(os.StdOut, logPrefix, log.LstdFlags)
+		logger = log.New(os.StdOut, logPrefix, log.LstdFlags)
 	)
+	_ = logger
 	logErr.SetPrefix(logPrefix)
 }

@@ -175,8 +175,8 @@ func (m *Mint) One(n nft.Nft) error {
 // Many attempts to mint at least one nft on the Chia Blockchain. Returns an error if there was a critical failure, nil on success.
 func (m *Mint) Many(c *nft.Collection, bulk bool) error {
 	if !bulk {
+		// Not bulk, loop over collection and use Mint.One()
 		for i, n := range c.Nfts {
-			// Not bulk, use Mint.One()
 			log.Printf("Starting on NFT #%d\n", i)
 			err := m.One(n)
 			if err != nil {
@@ -190,7 +190,7 @@ func (m *Mint) Many(c *nft.Collection, bulk bool) error {
 			time.Sleep(48 * time.Second)
 		}
 	} else {
-		// @TODO: Bulk minting.
+		// Bulk Minting
 		mbrq := m.MintBulkRequest()
 		mbrq.RoyaltyPercentage = rpc.PercentageToRoyalty(c.Royalty)
 		mbrq.MintTotal = len(c.Nfts)
